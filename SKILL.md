@@ -15,6 +15,15 @@ Lazy-load reference files at the points indicated below. Do not front-load.
 
 ## Step 0: Intake and Safety Check
 
+**Flag detection (first):**
+- `--language_bootstrap` → run ONLY the Language Bootstrap phase (below). Skip Steps 1-9. Refuses without a target project folder.
+- `--force` → meaningful only with `--language_bootstrap`; allows regenerating a `wiki/language.md` that already exists.
+- `--no_language_bootstrap` → opt-out. Suppresses the auto-trigger in Step 5.6. Use this if the user does not want a language.md for this vault.
+
+**Flag precedence:** if both `--language_bootstrap` and `--no_language_bootstrap` are passed, refuse with: `conflicting flags; pass one or neither.` Do not silently prefer either.
+
+**Auto-trigger default:** Step 5.6 fires on every vault-restructure run UNLESS `--no_language_bootstrap` is passed OR `--language_bootstrap` itself is passed (which routes through the standalone phase and bypasses Step 5.6's wrapper). Other flags do not suppress the auto-trigger. The user does not need to remember the flag.
+
 ```bash
 find [target-folder] -maxdepth 4 -type f | sort
 ```
@@ -263,7 +272,23 @@ If the user does NOT use Obsidian and operates primarily through Claude Code, th
 1. Reading the manifest's File Inventory table (lists every asset path)
 2. Running `find ./assets -type f` from a tool
 
-No additional aggregation file is required. Skip to Step 6.
+No additional aggregation file is required. Continue to Step 5.6.
+
+---
+
+## Step 5.6: Auto-Trigger Language Bootstrap
+
+**Fires on every vault-restructure run UNLESS `--no_language_bootstrap` is passed OR `--language_bootstrap` itself was passed (standalone mode bypasses this wrapper).** The user is not expected to remember the flag. The skill detects missing language.md and acts.
+
+Conditions (ALL must be true to auto-fire):
+- `<target-folder>/wiki/language.md` does NOT exist
+- `<target-folder>/CLAUDE.md` exists AND its line 1 does NOT contain `[RESTRUCTURE STUB`. (On first-run with a fresh stub, defer; the deferral is recorded so Step 8 surfaces it.)
+- `--no_language_bootstrap` was NOT passed
+- `--language_bootstrap` was NOT passed (when passed, the standalone phase runs directly per Step 0 and skips this wrapper)
+
+If conditions hold: run the Language Bootstrap phase below (Steps 1-6 of that phase) inline, right here.
+
+If the CLAUDE.md is still a `[RESTRUCTURE STUB`: do NOT fire. Surface in Step 8 report as: `LANGUAGE BOOTSTRAP DEFERRED — CLAUDE.md is still a restructure stub. Run /vault-sync to complete CLAUDE.md, then re-run /vault-restructure to auto-generate language.md.`
 
 ---
 
@@ -392,6 +417,40 @@ Files still needing manual review: [list or "none"]
 ```
 [YYYY-MM-DD HH:MM] RESTRUCTURE — Files: N processed, N moved, N frontmatter injected, N stubs, N flagged.
 ```
+
+---
+
+## Phase: Language Bootstrap (`--language_bootstrap`)
+
+Standalone phase. Generates `projects/<name>/wiki/language.md` for a project via MCQ co-authoring. Pattern proven on PEV (16 terms, 4 disambiguation rules, 3 grill smoke tests with zero schema drift).
+
+**Preconditions (refuses if violated):**
+- No target project folder passed → refuse. Phase requires `--language_bootstrap <project-path>`.
+- `<project-path>/wiki/language.md` already exists AND `--force` not passed → refuse. Redirect: "language.md exists; pass `--force` to regenerate or edit by hand."
+- `<project-path>/CLAUDE.md` missing → refuse. Phase requires project context; run base vault-restructure first.
+- `<project-path>/CLAUDE.md` line 1 contains `[RESTRUCTURE STUB` → refuse. Redirect: "CLAUDE.md is still a restructure stub; run /vault-sync to complete it first." (Parity with the Step 5.6 auto-trigger guard; standalone invocation must not bypass the weak-context check.)
+
+**Phase steps:**
+
+1. **Read context.** Project's CLAUDE.md, wiki/hot.md, wiki/index.md (if present), 3-5 most-recent wiki pages, raw/ filenames (not bodies), the identity index `~/Anmols Files/CLAUDE/identity/index.md` AND any wiki pages it links to (1-hop only, do not recurse).
+   - **Recency definition:** rank wiki pages by file mtime descending. If `wiki/vault-index.md` exists, use its `last_processed` field as the authority instead of raw mtime.
+2. **Draft 8-12 candidate terms.** Pull from: proper nouns (people, products, frameworks), repeated jargon, terms with multiple aliases in flight, ambiguity flagged in any source doc. Write `wiki/language.md` with `status: draft-pending-mcq`.
+3. **Run MCQs in 4 batches of up to 4 questions each.** Per design contract Rule 1: every question is 3-4 options; exactly one option ends with literal ` (Recommended)`. No brackets, no lowercase, no embedding inside the option letter. No open-ended prompts.
+   - Batch 1 (canonical-name picks): `"Term X is referred to as 'A', 'B', 'C', or 'D' (Recommended). Which is canonical?"`
+   - Batch 2 (alias allow/forbid): `"Should alias '<alias>' be 'allowed', 'forbidden', 'scoped-disambiguation', or '<skill's read>' (Recommended)?"`
+   - Batch 3 (disambiguation rules): `"When term X collides with Y, the rule is 'A', 'B', 'C' (Recommended), or 'D'?"`
+   - Batch 4 (ambiguity gating): per candidate where canonical decision is uncertain, `"Is this term 'lock now with my Recommended canonical', 'flag AMBIGUOUS and decide later' (Recommended), or 'drop from the language file entirely'?"` Default to the AMBIGUOUS option when source docs disagree. Terms answered AMBIGUOUS are written under a `## Decision-Pending Section` with `**Status**: AMBIGUOUS — decision pending`, per `patterns/language-template.md` rules.
+4. **Rewrite with decisions locked.** `status: active`. Append today's date to `created:` and `updated:`. Each term carries: Definition (one line) + Aliases allowed + Aliases forbidden + Disambiguation rule + Example correct + Example incorrect (per `patterns/language-template.md`).
+5. **Register in index (dedupe on re-runs).** Open `~/Anmols Files/CLAUDE/patterns/language-index.md`. Match existing rows by the path column.
+   - If the project's path is NOT present: append a new row: `| <Project Name> | <relative-path-to-language.md> | <today> | <today> | Built via --language_bootstrap |`.
+   - If the project's path IS present (re-run via `--force`): UPDATE the `Last Updated` cell to today, and append `; regenerated via --force <today>` to the Notes cell. Do not append a duplicate row.
+6. **Smoke-test hook.** Print one suggested grep per forbidden alias so the user can validate the rules against the existing wiki: `grep -rn --include="*.md" "<forbidden_alias>" "<project_root>"`. Do not run the grep here; that is the user's verify step.
+
+**Refusals (Rule 3):**
+- Refuses hand-writing language.md from scratch. The MCQ co-authoring flow is mandatory; that is what makes this "5 min calibration, not documentation labor."
+- Refuses running on a project that already has `language.md` unless `--force` is passed.
+- Refuses running without an explicit target project folder.
+- Refuses authoring `patterns/language-glossary-master.md`. That file is DERIVED by vault-lint, never authored here.
 
 ---
 
