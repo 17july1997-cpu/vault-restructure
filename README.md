@@ -2,7 +2,6 @@
 
 A Claude Code skill that normalizes a folder of unorganized files into a proper vault. Routes files, injects YAML frontmatter, creates the 6-file vault structure, writes a manifest + vault-index for `vault-sync` to consume.
 
-Built as part of the three-skill vault architecture described in [this article](#).
 
 ## Part of vault-toolkit
 
