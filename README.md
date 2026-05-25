@@ -4,6 +4,19 @@ A Claude Code skill that normalizes a folder of unorganized files into a proper 
 
 Built as part of the three-skill vault architecture described in [this article](#).
 
+## Part of vault-toolkit
+
+This is one of three skills designed to work together as a system. The trio shares a manifest schema and a vault-index hash chain. **Installing this skill standalone without the other two will produce runtime errors** — `vault-lint` expects a manifest written by `vault-restructure`; `vault-sync` expects either to bootstrap a vault itself or to find one scaffolded by `vault-restructure`.
+
+**Recommended install:** the [`vault-toolkit` plugin](https://github.com/17july1997-cpu/vault-toolkit) bundles all three skills with verified compatibility in a single Claude Code plugin install.
+
+Sibling repos:
+- [vault-restructure](https://github.com/17july1997-cpu/vault-restructure) — file routing + manifest creation
+- [vault-sync](https://github.com/17july1997-cpu/vault-sync) — vault bootstrap + session ingestion
+- [vault-lint](https://github.com/17july1997-cpu/vault-lint) — three-tier health checks
+
+This repo is retained for code inspection, cherry-picking, and individual-skill forking.
+
 ## Install
 
 Clone into your Claude Code skills folder:
